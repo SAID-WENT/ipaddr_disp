@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"] // ★ これを追加するとコンソール画面が出なくなる
 use eframe::egui;
 use std::net::UdpSocket;
 use std::time::Duration; // 時間指定用のモジュールを追加
@@ -81,7 +82,6 @@ impl eframe::App for IpApp {
             // 手動更新ボタンもそのまま残しておきます
             if ui.button("今すぐ更新").clicked() {
                 // ボタンを押した時も即座に再描画を呼び出す
-                ui.ctx().request_repaint();
             }
         });
     }
