@@ -12,9 +12,41 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "サイネージ用 IP表示アプリ",
         options,
-        // クロージャの戻り値は Ok(...) でラップする仕様です
-        Box::new(|_cc| Ok(Box::new(IpApp::default()))),
+        Box::new(|cc| {
+            // ★ 日本語フォント（メイリオ）のセットアップ
+            setup_custom_fonts(&cc.egui_ctx);
+            Ok(Box::new(IpApp::default()))
+        }),
     )
+}
+
+/// Windowsの日本語フォント（Meiryo）をeguiに読み込ませる関数
+fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // Windows標準のメイリオフォントを読み込む
+    if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\meiryo.ttc") {
+        fonts.font_data.insert(
+            "meiryo".to_owned(),
+            egui::FontData::from_owned(font_data).into(),
+        );
+
+        // プロポーショナルフォント（通常の文章用）の最優先に設定
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "meiryo".to_owned());
+
+        // 等幅フォント（数字やコード用）の最優先にも設定
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .insert(0, "meiryo".to_owned());
+
+        ctx.set_fonts(fonts);
+    }
 }
 
 struct IpApp {
@@ -30,7 +62,6 @@ impl Default for IpApp {
 }
 
 impl eframe::App for IpApp {
-    // 0.35.0 では `update` ではなく `ui` メソッドを実装します
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
@@ -52,7 +83,6 @@ impl eframe::App for IpApp {
     }
 }
 
-/// 外部ネットワークに接続されているローカルIPを取得する関数
 fn get_local_ip() -> Option<String> {
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
