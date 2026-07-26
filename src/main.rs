@@ -22,28 +22,29 @@ fn main() -> eframe::Result {
 }
 
 fn setup_custom_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
+let mut fonts = egui::FontDefinitions::default();
 
-    if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\meiryo.ttc") {
-        fonts.font_data.insert(
-            "meiryo".to_owned(),
-            egui::FontData::from_owned(font_data).into(),
-        );
+    // プロジェクトルート配下の assets フォルダからフォントデータを直接埋め込む
+    let font_bytes = include_bytes!("../assets/NotoSansJP-Regular.ttf");
 
-        fonts
-            .families
-            .entry(egui::FontFamily::Proportional)
-            .or_default()
-            .insert(0, "meiryo".to_owned());
+    fonts.font_data.insert(
+        "noto_sans".to_owned(),
+        egui::FontData::from_static(font_bytes).into(),
+    );
 
-        fonts
-            .families
-            .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .insert(0, "meiryo".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "noto_sans".to_owned());
 
-        ctx.set_fonts(fonts);
-    }
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "noto_sans".to_owned());
+
+    ctx.set_fonts(fonts);
 }
 
 struct IpApp {
