@@ -1,5 +1,6 @@
 use eframe::egui;
 use std::net::UdpSocket;
+use std::time::Duration; // 時間指定用のモジュールを追加
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -13,32 +14,27 @@ fn main() -> eframe::Result {
         "サイネージ用 IP表示アプリ",
         options,
         Box::new(|cc| {
-            // ★ 日本語フォント（メイリオ）のセットアップ
             setup_custom_fonts(&cc.egui_ctx);
             Ok(Box::new(IpApp::default()))
         }),
     )
 }
 
-/// Windowsの日本語フォント（Meiryo）をeguiに読み込ませる関数
 fn setup_custom_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    // Windows標準のメイリオフォントを読み込む
     if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\meiryo.ttc") {
         fonts.font_data.insert(
             "meiryo".to_owned(),
             egui::FontData::from_owned(font_data).into(),
         );
 
-        // プロポーショナルフォント（通常の文章用）の最優先に設定
         fonts
             .families
             .entry(egui::FontFamily::Proportional)
             .or_default()
             .insert(0, "meiryo".to_owned());
 
-        // 等幅フォント（数字やコード用）の最優先にも設定
         fonts
             .families
             .entry(egui::FontFamily::Monospace)
@@ -63,6 +59,12 @@ impl Default for IpApp {
 
 impl eframe::App for IpApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // ★ 5秒ごとに画面描画（ui関数の実行）を予約する設定
+        ui.ctx().request_repaint_after(Duration::from_secs(5));
+
+        // 描画が実行されるたびにIPアドレスを最新化
+        self.ip_address = get_local_ip().unwrap_or_else(|| "取得失敗".to_string());
+
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
             ui.label(egui::RichText::new("自PCのIPアドレス").size(20.0));
@@ -76,8 +78,10 @@ impl eframe::App for IpApp {
             );
 
             ui.add_space(20.0);
-            if ui.button("更新").clicked() {
-                self.ip_address = get_local_ip().unwrap_or_else(|| "取得失敗".to_string());
+            // 手動更新ボタンもそのまま残しておきます
+            if ui.button("今すぐ更新").clicked() {
+                // ボタンを押した時も即座に再描画を呼び出す
+                ui.ctx().request_repaint();
             }
         });
     }
