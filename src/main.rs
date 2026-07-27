@@ -1,13 +1,36 @@
-#![windows_subsystem = "windows"] // ★ これを追加するとコンソール画面が出なくなる
+//#![windows_subsystem = "windows"] // ★ これを追加するとコンソール画面が出なくなる
 use eframe::egui;
 use std::net::UdpSocket;
 use std::time::Duration; // 時間指定用のモジュールを追加
+use eframe::egui_wgpu::wgpu; // eframe 内部の wgpu をそのまま使う
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([400.0, 200.0])
             .with_always_on_top(),
+
+// ★ DX12 に固定する設定
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(
+                eframe::egui_wgpu::WgpuSetupCreateNew {
+                    instance_descriptor: wgpu::InstanceDescriptor {
+                        backends: wgpu::Backends::DX12,
+                        flags: wgpu::InstanceFlags::default(),
+                        backend_options: wgpu::BackendOptions::default(),
+                        display: None,
+                        memory_budget_thresholds: Default::default(),
+                    },
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    display_handle: None,
+                    native_adapter_selector: None,
+                    device_descriptor: std::sync::Arc::new(|_adapter| {
+                        wgpu::DeviceDescriptor::default()
+                    }),
+                }
+            ),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -15,6 +38,16 @@ fn main() -> eframe::Result {
         "サイネージ用 IP表示アプリ",
         options,
         Box::new(|cc| {
+            if let Some(wgpu_state) = &cc.wgpu_render_state {
+                println!("[LOG] レンダリングバックエンド: wgpu");
+                // ★ .adapter.get_info() を使って GPU 情報を取得します
+                let adapter_info = wgpu_state.adapter.get_info();
+                println!("[LOG] バックエンド種別: {:?}", adapter_info.backend); // ★ ここが Dx12 になるか確認
+                println!("[LOG] GPU情報: {:?}", adapter_info);
+            } else {
+                println!("[LOG] レンダリングバックエンド: glow (OpenGL)");
+            }
+
             setup_custom_fonts(&cc.egui_ctx);
             Ok(Box::new(IpApp::default()))
         }),
