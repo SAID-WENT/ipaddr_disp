@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cargo-license
+        run: cargo install cargo-license --version 0.7.0
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Generate Third-Party Licenses
+        shell: pwsh
+        run: |
+          $out = "THIRD_PARTY_LICENSES.txt"
+          function AddLine([string]$v) { Add-Content -LiteralPath $out -Value $v -Encoding UTF8 }
+
+          $header = @'
+          ========================================================================
+          Third-Party Software Notices and Licenses
+          ========================================================================
+
+          This application includes the following open-source components:
+
+          ------------------------------------------------------------------------
+          1. Noto Sans Japanese
+          ------------------------------------------------------------------------
+          '@
+          Set-Content -LiteralPath $out -Value $header -Encoding UTF8
+          AddLine ""
+          AddLine (Get-Content -LiteralPath "assets\OFL.txt" -Raw)
+
+          AddLine ""
+          AddLine "------------------------------------------------------------------------"
+          AddLine "2. Rust Library Dependencies"
+          AddLine "------------------------------------------------------------------------"
+
+          $licenses = @(cargo-license --json | ConvertFrom-Json)
+          foreach ($crate in $licenses) {
+            AddLine ""
+            AddLine ("[{0} {1}]" -f $crate.name, $crate.version)
+            if ($crate.license)     { AddLine ("License:    {0}" -f $crate.license) }
+            if ($crate.repository)  { AddLine ("Repository: {0}" -f $crate.repository) }
+            if ($crate.authors)     { AddLine ("Copyright:  {0}" -f $crate.authors) }
+            if ($crate.license_file -and (Test-Path -LiteralPath $crate.license_file)) {
+              AddLine ""
+              AddLine (Get-Content -LiteralPath $crate.license_file -Raw)
+            }
+          }
+
+      - name: Package Assets and Binary
+        shell: pwsh
+        run: |
+          $distDir = "dist"
+          if (Test-Path $distDir) { Remove-Item -Recurse -Force $distDir }
+          New-Item -ItemType Directory -Path $distDir
+
+          # Copy binary
+          Copy-Item "target\release\ipaddr_disp.exe" -Destination $distDir
+
+          # Copy assets
+          Copy-Item -Recurse "assets" -Destination $distDir
+
+          # Copy license
+          Copy-Item "THIRD_PARTY_LICENSES.txt" -Destination $distDir
+
+          # Zip the contents
+          Compress-Archive -Path "$distDir\*" -DestinationPath "ipaddr_disp_release.zip"
+
+      - name: Determine prerelease from tag
+        id: check
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -match '^v?\d+\.\d+\.\d+[-+]') {
+            "prerelease=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "prerelease=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ipaddr_disp_release.zip
+          draft: false
+          prerelease: ${{ steps.check.outputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
