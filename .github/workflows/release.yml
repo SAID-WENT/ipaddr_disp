@@ -21,8 +21,14 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Cache cargo binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/
+          key: ${{ runner.os }}-cargo-license-0.7.0
+
       - name: Install cargo-license
-        run: cargo install cargo-license --version 0.7.0
+        run: cargo install cargo-license --version 0.7.0 --no-default-features
 
       - name: Build
         run: cargo build --release
@@ -67,6 +73,7 @@ jobs:
           }
 
       - name: Package Assets and Binary
+        id: package
         shell: pwsh
         run: |
           $distDir = "dist"
@@ -83,8 +90,12 @@ jobs:
           Copy-Item "THIRD_PARTY_LICENSES.txt" -Destination $distDir
 
           # Zip the contents
-          $version = $env:GITHUB_REF_NAME
-          Compress-Archive -Path "$distDir\*" -DestinationPath "ipaddr_disp_${version}.zip"
+          $tag = $env:GITHUB_REF_NAME
+          $archiveName = "ipaddr_disp_${tag}.zip"
+          Compress-Archive -Path "$distDir\*" -DestinationPath $archiveName
+          
+          # 修正: 生成したファイル名を後続ステップへ渡す
+          "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
 
       - name: Determine prerelease from tag
         id: check
@@ -96,10 +107,18 @@ jobs:
             "prerelease=false" >> $env:GITHUB_OUTPUT
           }
 
-      - name: Release
+      - name: Upload Artifact (手動実行時のみ)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipaddr_disp_manual_build
+          path: ${{ steps.package.outputs.archive_name }}
+
+      - name: Release(タグプッシュ時のみ)
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: ipaddr_disp_release.zip
+          files: ${{ steps.package.outputs.archive_name }}
           draft: false
           prerelease: ${{ steps.check.outputs.prerelease }}
         env:
