@@ -100,16 +100,15 @@ fn export_ip(config: &AppConfig, ip: &str) {
         return;
     }
 
-    if let Some(parent) = config.output_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                warn!(
-                    "[EXPORT] 出力先ディレクトリを作成できませんでした ({}): {err}",
-                    parent.display()
-                );
-                return;
-            }
-        }
+    if let Some(parent) = config.output_path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(err) = fs::create_dir_all(parent)
+    {
+        warn!(
+            "[EXPORT] 出力先ディレクトリを作成できませんでした ({}): {err}",
+            parent.display()
+        );
+        return;
     }
 
     match fs::write(&config.output_path, ip) {
