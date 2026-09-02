@@ -1,7 +1,8 @@
 #![windows_subsystem = "windows"] // ★ これを追加するとコンソール画面が出なくなる
 
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::net::UdpSocket;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,7 +10,8 @@ use clap::Parser;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use egui::RichText;
-use log::info;
+use log::{info, warn};
+use serde::Deserialize;
 use simplelog::{Config as LogConfig, WriteLogger};
 
 const APP_TITLE: &str = "サイネージ用 IP表示アプリ";
@@ -19,6 +21,7 @@ const FONT_BYTES: &[u8] = include_bytes!("../assets/NotoSansJP-Regular.ttf");
 const IP_FAILED: &str = "取得失敗";
 const IP_ACCENT: egui::Color32 = egui::Color32::from_rgb(0, 150, 255);
 const DEFAULT_LOG_FILE: &str = "ipaddr_disp.log";
+const CONFIG_FILE: &str = "config.json";
 
 #[derive(Parser)]
 #[command(name = "ipaddr_disp", about = "サイネージ用 IP表示アプリ")]
@@ -29,6 +32,96 @@ struct Cli {
     /// コンソール(標準エラー出力)にもログを出力する
     #[arg(long)]
     console: bool,
+}
+
+fn default_output_path() -> PathBuf {
+    PathBuf::from("ipaddr.txt")
+}
+
+/// アプリ動作を制御する設定。`config.json` から読み込む。
+#[derive(Debug, Clone, Deserialize)]
+struct AppConfig {
+    /// IPアドレスのファイル出力を行うかどうか
+    #[serde(default)]
+    enable_ip_export: bool,
+    /// 出力先テキストファイルのパス
+    #[serde(default = "default_output_path")]
+    output_path: PathBuf,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            enable_ip_export: false,
+            output_path: default_output_path(),
+        }
+    }
+}
+
+/// 起動時に `config.json` の読み込みを試みる。
+/// ファイルが存在しない場合は自動生成せず、メモリ上のデフォルト値
+/// (`enable_ip_export = false`) を返す。
+fn load_config() -> AppConfig {
+    let content = match fs::read_to_string(CONFIG_FILE) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            info!("[CONFIG] {CONFIG_FILE} が存在しないためデフォルト設定を使用します");
+            return AppConfig::default();
+        }
+        Err(err) => {
+            warn!("[CONFIG] {CONFIG_FILE} を読み込めませんでした ({err})。デフォルト設定を使用します");
+            return AppConfig::default();
+        }
+    };
+
+    match serde_json::from_str::<AppConfig>(&content) {
+        Ok(config) => {
+            info!(
+                "[CONFIG] {CONFIG_FILE} を読み込みました (enable_ip_export={}, output_path={})",
+                config.enable_ip_export,
+                config.output_path.display()
+            );
+            config
+        }
+        Err(err) => {
+            warn!("[CONFIG] {CONFIG_FILE} のパースに失敗しました ({err})。デフォルト設定を使用します");
+            AppConfig::default()
+        }
+    }
+}
+
+/// `enable_ip_export` が true かつ IP取得成功時のみ、指定パスへ上書き出力する。
+fn export_ip(config: &AppConfig, ip: &str) {
+    if !config.enable_ip_export {
+        return;
+    }
+    if ip.is_empty() || ip == IP_FAILED {
+        info!("[EXPORT] IPアドレスが取得できていないためファイル出力をスキップします");
+        return;
+    }
+
+    if let Some(parent) = config.output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                warn!(
+                    "[EXPORT] 出力先ディレクトリを作成できませんでした ({}): {err}",
+                    parent.display()
+                );
+                return;
+            }
+        }
+    }
+
+    match fs::write(&config.output_path, ip) {
+        Ok(()) => info!(
+            "[EXPORT] IPアドレス ({ip}) を {} に出力しました",
+            config.output_path.display()
+        ),
+        Err(err) => warn!(
+            "[EXPORT] IPアドレスを {} に出力できませんでした: {err}",
+            config.output_path.display()
+        ),
+    }
 }
 
 fn main() -> eframe::Result {
@@ -133,14 +226,28 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-#[derive(Default)]
 struct IpApp {
     ip_address: String,
+    config: AppConfig,
+}
+
+impl Default for IpApp {
+    fn default() -> Self {
+        let config = load_config();
+        let mut app = Self {
+            ip_address: String::new(),
+            config,
+        };
+        // アプリ起動時の初回取得＋ファイル出力
+        app.refresh_ip();
+        app
+    }
 }
 
 impl IpApp {
     fn refresh_ip(&mut self) {
         self.ip_address = get_local_ip().unwrap_or_else(|_| IP_FAILED.to_owned());
+        export_ip(&self.config, &self.ip_address);
     }
 }
 
